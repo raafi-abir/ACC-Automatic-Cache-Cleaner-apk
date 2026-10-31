@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="a11y_description">Used only while you tap Clean now or a scheduled clean runs. ACC opens each app\'s storage page in Settings and taps Clear cache. It reads nothing else and never taps Clear data.</string>
+</resources>
