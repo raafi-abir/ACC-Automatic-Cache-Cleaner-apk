@@ -1,6 +1,7 @@
 package io.github.raafiabir.acc
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -14,10 +15,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import io.github.raafiabir.acc.ui.AccTheme
 import io.github.raafiabir.acc.ui.App
+import io.github.raafiabir.acc.ui.AppActions
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
-    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,8 +28,19 @@ class MainActivity : ComponentActivity() {
             AccTheme {
                 App(
                     vm = vm,
-                    onStatusAction = ::onStatusAction,
-                    onScheduleEnabled = ::askNotifications,
+                    actions = AppActions(
+                        statusAction = ::onStatusAction,
+                        requestNotifications = ::askNotifications,
+                        openAppInfo = {
+                            open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                        },
+                        openUsageAccess = { open(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+                        openAccessibility = { open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                        openShizuku = {
+                            packageManager.getLaunchIntentForPackage(ShizukuBridge.SHIZUKU_PACKAGE)?.let { open(it) }
+                        },
+                        getShizuku = { open(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"))) },
+                    ),
                 )
             }
         }
@@ -38,17 +51,24 @@ class MainActivity : ComponentActivity() {
         vm.refresh()
     }
 
+    private fun open(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            // Some phones don't have every Settings page.
+        }
+    }
+
     private fun onStatusAction(ui: UiState) {
         when {
             ui.active != null ->
-                if (!ui.usageAccess) startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            ui.backend == Backend.Accessibility ->
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                if (!ui.usageAccess) open(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            ui.backend == Backend.Accessibility -> open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             ui.backend == Backend.Root -> vm.recheckRoot()
             ui.shizuku == ShizukuState.NotInstalled ->
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
+                open(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
             ui.shizuku == ShizukuState.NotRunning ->
-                packageManager.getLaunchIntentForPackage(ShizukuBridge.SHIZUKU_PACKAGE)?.let(::startActivity)
+                packageManager.getLaunchIntentForPackage(ShizukuBridge.SHIZUKU_PACKAGE)?.let { open(it) }
             ui.shizuku == ShizukuState.NeedsPermission -> vm.requestPermission()
         }
     }

@@ -10,41 +10,71 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.raafiabir.acc.MainViewModel
 import io.github.raafiabir.acc.UiState
 
+/** Things only the activity can do (open system screens, ask for runtime permissions). */
+class AppActions(
+    val statusAction: (UiState) -> Unit,
+    val requestNotifications: () -> Unit,
+    val openAppInfo: () -> Unit,
+    val openUsageAccess: () -> Unit,
+    val openAccessibility: () -> Unit,
+    val openShizuku: () -> Unit,
+    val getShizuku: () -> Unit,
+)
+
 @Composable
-fun App(
-    vm: MainViewModel,
-    onStatusAction: (UiState) -> Unit,
-    onScheduleEnabled: () -> Unit,
-) {
+fun App(vm: MainViewModel, actions: AppActions) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val apps by vm.apps.collectAsStateWithLifecycle()
-    var exclusions by rememberSaveable { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf("home") }
 
-    if (exclusions) {
-        LaunchedEffect(Unit) { vm.loadApps() }
-        ExclusionsScreen(
-            apps = apps,
-            excluded = ui.excluded,
-            onToggle = vm::toggleExcluded,
-            onBack = { exclusions = false },
-        )
-    } else {
-        HomeScreen(
+    LaunchedEffect(screen) { if (screen == "exclusions") vm.loadApps() }
+
+    if (!ui.setupDone) {
+        SetupScreen(
             ui = ui,
-            actions = HomeActions(
-                clean = vm::clean,
-                statusAction = { onStatusAction(ui) },
-                setSchedule = { on ->
-                    vm.setSchedule(on)
-                    if (on) onScheduleEnabled()
-                },
-                setTime = vm::setTime,
-                setCache = vm::setCache,
-                setJunk = vm::setJunk,
-                setLeftover = vm::setLeftover,
-                openExclusions = { exclusions = true },
-                cycleBackend = vm::cycleBackend,
+            act = SetupActions(
+                chooseBackend = vm::setBackend,
+                getShizuku = actions.getShizuku,
+                openShizuku = actions.openShizuku,
+                allowShizuku = vm::requestPermission,
+                checkRoot = vm::recheckRoot,
+                openAccessibility = actions.openAccessibility,
+                openAppInfo = actions.openAppInfo,
+                allowUsage = actions.openUsageAccess,
+                allowNotifications = actions.requestNotifications,
+                finish = vm::finishSetup,
             ),
         )
+    } else {
+        when (screen) {
+            "clean" -> WhatToCleanScreen(
+                ui = ui,
+                onCache = vm::setCache,
+                onJunk = vm::setJunk,
+                onLeftover = vm::setLeftover,
+                onBack = { screen = "home" },
+            )
+            "access" -> AccessScreen(ui = ui, onChoose = vm::setBackend, onBack = { screen = "home" })
+            "exclusions" -> ExclusionsScreen(
+                apps = apps,
+                excluded = ui.excluded,
+                onToggle = vm::toggleExcluded,
+                onBack = { screen = "home" },
+            )
+            else -> HomeScreen(
+                ui = ui,
+                actions = HomeActions(
+                    clean = vm::clean,
+                    stop = vm::stop,
+                    statusAction = { actions.statusAction(ui) },
+                    setSchedule = { on ->
+                        vm.setSchedule(on)
+                        if (on && !ui.notifications) actions.requestNotifications()
+                    },
+                    setTime = vm::setTime,
+                    open = { screen = it },
+                ),
+            )
+        }
     }
 }

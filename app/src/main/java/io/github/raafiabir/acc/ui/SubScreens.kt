@@ -1,0 +1,166 @@
+package io.github.raafiabir.acc.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import io.github.raafiabir.acc.AppEntry
+import io.github.raafiabir.acc.Backend
+import io.github.raafiabir.acc.UiState
+
+@Composable
+fun WhatToCleanScreen(
+    ui: UiState,
+    onCache: (Boolean) -> Unit,
+    onJunk: (Boolean) -> Unit,
+    onLeftover: (Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    SubScreen("What to clean", onBack) {
+        Panel {
+            SwitchRow("App cache", "Internal and external cache of every app", ui.cleanCache, onCache)
+            Hairline()
+            SwitchRow("Thumbnails and logs", "Gallery thumbnails and the system log", ui.cleanJunk, onJunk)
+            Hairline()
+            SwitchRow(
+                "Leftover folders",
+                "Deletes data folders of uninstalled apps. Can't be undone.",
+                ui.cleanLeftover,
+                onLeftover,
+            )
+        }
+        Text(
+            "Accessibility mode can only clear app cache. The rest needs Shizuku or root.",
+            style = AccType.small,
+            color = Acc.colors.mute,
+            modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+        )
+    }
+}
+
+@Composable
+fun AccessScreen(ui: UiState, onChoose: (Backend) -> Unit, onBack: () -> Unit) {
+    val options = listOf(
+        Backend.Auto to "Tries Shizuku, then root, then accessibility.",
+        Backend.Shizuku to "Fast and silent. Needs the Shizuku app running.",
+        Backend.Root to "Fast and silent. Needs root.",
+        Backend.Accessibility to "No extra tools. Slower, and it takes over the screen.",
+    )
+    SubScreen("Access method", onBack) {
+        Panel {
+            options.forEachIndexed { i, (backend, description) ->
+                if (i > 0) Hairline()
+                ListRow(backend.label, description, onClick = { onChoose(backend) }) {
+                    RadioDot(ui.backend == backend)
+                }
+            }
+        }
+        Text(
+            text = ui.active?.let { "Using ${it.label} right now." } ?: "Nothing is available right now.",
+            style = AccType.small,
+            color = Acc.colors.mute,
+            modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+        )
+    }
+}
+
+@Composable
+fun ExclusionsScreen(
+    apps: List<AppEntry>,
+    excluded: Set<String>,
+    onToggle: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    val c = Acc.colors
+    var query by remember { mutableStateOf("") }
+    var showSystem by remember { mutableStateOf(false) }
+
+    // Ignores `excluded` on purpose so rows don't jump when you tick one.
+    val shown = remember(apps, query, showSystem) {
+        apps.filter { a ->
+            (showSystem || !a.system) &&
+                (query.isBlank() || a.label.contains(query, true) || a.pkg.contains(query, true))
+        }
+    }
+
+    SubScreen("Excluded apps", onBack) {
+        Text(
+            "Their cache and folders are left alone by every clean.",
+            style = AccType.desc,
+            color = c.mute,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        TextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            placeholder = { Text("Search apps", style = AccType.body) },
+            textStyle = AccType.body,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = c.surface,
+                unfocusedContainerColor = c.surface,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = c.acc,
+                focusedTextColor = c.ink,
+                unfocusedTextColor = c.ink,
+                focusedPlaceholderColor = c.mute,
+                unfocusedPlaceholderColor = c.mute,
+            ),
+        )
+        Panel(Modifier.padding(top = 12.dp)) {
+            SwitchRow("Show system apps", null, showSystem) { showSystem = it }
+        }
+        LazyColumn(Modifier.weight(1f).padding(top = 12.dp)) {
+            items(shown, key = { it.pkg }) { app ->
+                AppRow(app, app.pkg in excluded) { onToggle(app.pkg) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppRow(app: AppEntry, checked: Boolean, onToggle: () -> Unit) {
+    val c = Acc.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() })
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(app.label, style = AccType.bodyMedium, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(app.pkg, style = AccType.small, color = c.mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Checkbox(
+            checked = checked,
+            onCheckedChange = null,
+            colors = CheckboxDefaults.colors(checkedColor = c.acc, checkmarkColor = c.onAcc, uncheckedColor = c.mute),
+        )
+    }
+}

@@ -1,29 +1,30 @@
 package io.github.raafiabir.acc.ui
 
+import android.content.Context
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import android.text.format.Formatter
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -35,127 +36,86 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.raafiabir.acc.Backend
 import io.github.raafiabir.acc.ShizukuState
+import io.github.raafiabir.acc.Slice
 import io.github.raafiabir.acc.UiState
 
 class HomeActions(
     val clean: () -> Unit,
+    val stop: () -> Unit,
     val statusAction: () -> Unit,
     val setSchedule: (Boolean) -> Unit,
     val setTime: (Int, Int) -> Unit,
-    val setCache: (Boolean) -> Unit,
-    val setJunk: (Boolean) -> Unit,
-    val setLeftover: (Boolean) -> Unit,
-    val openExclusions: () -> Unit,
-    val cycleBackend: () -> Unit,
+    val open: (String) -> Unit,
 )
+
+private val barAlphas = listOf(1f, 0.72f, 0.48f, 0.26f)
 
 @Composable
 fun HomeScreen(ui: UiState, actions: HomeActions) {
     val ctx = LocalContext.current
+    val c = Acc.colors
     var pickTime by remember { mutableStateOf(false) }
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
     Column(
         Modifier
             .fillMaxSize()
+            .background(c.bg)
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 20.dp)
     ) {
-        Spacer(Modifier.height(20.dp))
-        Text("ACC", style = MaterialTheme.typography.titleLarge)
-
-        Spacer(Modifier.height(48.dp))
-        Text(
-            text = ui.cacheBytes?.let { Formatter.formatFileSize(ctx, it) } ?: "–",
-            style = SizeFigure,
-        )
-        Text(
-            text = when {
-                ui.cacheBytes == null -> "Cache size unavailable"
-                ui.cacheApps == 1 -> "of cache in 1 app"
-                else -> "of cache in ${ui.cacheApps} apps"
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            color = muted,
-        )
-
-        Spacer(Modifier.height(32.dp))
-        Button(
-            onClick = actions.clean,
-            enabled = !ui.cleaning,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp).height(40.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                if (ui.cleaning) (ui.progress ?: "Cleaning…") else "Clean now",
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-            )
+            Text("ACC", style = AccType.wordmark, color = c.ink)
+            StatusChip(ui.active?.label)
         }
 
-        Spacer(Modifier.height(16.dp))
-        val (statusText, statusAction) = status(ui)
-        Text(statusText, style = MaterialTheme.typography.bodyMedium, color = muted)
-        if (statusAction != null) {
-            Text(
-                statusAction,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                textDecoration = TextDecoration.Underline,
-                modifier = Modifier.clickable(onClick = actions.statusAction).padding(top = 6.dp, bottom = 6.dp),
+        CacheFigure(ctx, ui)
+        UsageBar(ctx, ui)
+
+        Spacer(Modifier.height(28.dp))
+        if (ui.cleaning && ui.active == Backend.Accessibility) {
+            PrimaryButton("Stop", actions.stop, ghost = true)
+        } else {
+            PrimaryButton(
+                text = if (ui.cleaning) (ui.progress ?: "Cleaning…") else "Clean now",
+                onClick = actions.clean,
+                enabled = !ui.cleaning,
             )
         }
-        ui.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        lastRunText(ctx, ui)?.let {
-            Spacer(Modifier.height(4.dp))
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = muted)
-        }
+        Notes(ctx, ui, actions.statusAction)
 
-        Spacer(Modifier.height(32.dp))
-        Rule()
-        Item(
-            title = "Scheduled cleaning",
-            sub = if (ui.scheduleOn) "Every day" else "Off",
-            onClick = { actions.setSchedule(!ui.scheduleOn) },
-        ) { AccSwitch(ui.scheduleOn, actions.setSchedule) }
-        if (ui.scheduleOn) {
-            Item(
-                title = "Time",
+        Spacer(Modifier.height(28.dp))
+        Panel {
+            ListRow(
+                title = "Scheduled cleaning",
+                sub = if (ui.scheduleOn) "Every day at ${formatTime(ui.hour, ui.minute)}" else "Off",
                 onClick = { pickTime = true },
-            ) { Text(formatTime(ui.hour, ui.minute), style = MaterialTheme.typography.bodyLarge) }
+            ) { AccSwitch(ui.scheduleOn, actions.setSchedule) }
+            Hairline()
+            ListRow("What to clean", cleanSummary(ui), { actions.open("clean") }) { Chevron() }
+            Hairline()
+            ListRow(
+                "Excluded apps",
+                if (ui.excluded.isEmpty()) "None" else if (ui.excluded.size == 1) "1 app" else "${ui.excluded.size} apps",
+                { actions.open("exclusions") },
+            ) { Chevron() }
+            Hairline()
+            ListRow("Access method", accessSummary(ui), { actions.open("access") }) { Chevron() }
         }
-        Rule()
-        Item("App cache", "Internal and external cache of every app", { actions.setCache(!ui.cleanCache) }) {
-            AccSwitch(ui.cleanCache, actions.setCache)
-        }
-        Item("Thumbnails and logs", "Gallery thumbnails and the system log", { actions.setJunk(!ui.cleanJunk) }) {
-            AccSwitch(ui.cleanJunk, actions.setJunk)
-        }
-        Item(
-            "Leftover folders",
-            "Deletes data folders of uninstalled apps. Can't be undone.",
-            { actions.setLeftover(!ui.cleanLeftover) },
-        ) { AccSwitch(ui.cleanLeftover, actions.setLeftover) }
-        Rule()
-        Item("Excluded apps", onClick = actions.openExclusions) {
-            Text(
-                if (ui.excluded.isEmpty()) "None" else ui.excluded.size.toString(),
-                style = MaterialTheme.typography.bodyLarge,
-                color = muted,
-            )
-        }
-        Item("Access method", "Auto tries Shizuku, then root, then accessibility", actions.cycleBackend) {
-            Text(ui.backend.label, style = MaterialTheme.typography.bodyLarge, color = muted)
-        }
-        Rule()
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(28.dp))
     }
 
     if (pickTime) {
@@ -163,22 +123,127 @@ fun HomeScreen(ui: UiState, actions: HomeActions) {
             hour = ui.hour,
             minute = ui.minute,
             onDismiss = { pickTime = false },
-            onConfirm = { h, m -> actions.setTime(h, m); pickTime = false },
+            onConfirm = { h, m ->
+                actions.setTime(h, m)
+                if (!ui.scheduleOn) actions.setSchedule(true)
+                pickTime = false
+            },
         )
     }
 }
 
-private fun status(ui: UiState): Pair<String, String?> {
+@Composable
+private fun StatusChip(label: String?) {
+    val c = Acc.colors
+    Row(
+        Modifier.clip(RoundedCornerShape(99.dp)).background(c.surface).padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (label != null) c.acc else c.mute))
+        Text(label ?: "Not connected", style = AccType.smallMedium, color = c.ink)
+    }
+}
+
+@Composable
+private fun CacheFigure(ctx: Context, ui: UiState) {
+    val c = Acc.colors
+    val parts = ui.cacheBytes?.let { splitSize(Formatter.formatFileSize(ctx, it)) }
+    Row(Modifier.padding(top = 28.dp), verticalAlignment = Alignment.Bottom) {
+        Text(parts?.first ?: "–", style = AccType.big, color = c.ink)
+        if (parts != null && parts.second.isNotEmpty()) {
+            Text(parts.second, style = AccType.unit, color = c.mute, modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
+        }
+    }
+    Text(
+        text = when {
+            ui.cacheBytes == null -> "Cache size unavailable"
+            ui.cacheApps == 1 -> "of cache in 1 app"
+            else -> "of cache across ${ui.cacheApps} apps"
+        },
+        style = AccType.caption,
+        color = c.mute,
+        modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
+    )
+}
+
+@Composable
+private fun UsageBar(ctx: Context, ui: UiState) {
+    val c = Acc.colors
+    val total = ui.cacheBytes ?: 0L
+    if (total <= 0L || ui.top.isEmpty()) {
+        Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(3.dp)).background(c.line))
+        return
+    }
+    val others = (total - ui.top.sumOf { it.bytes }).coerceAtLeast(0L)
+    val parts: List<Slice> = if (others > 0) ui.top + Slice("Others", others) else ui.top
+
+    Row(Modifier.fillMaxWidth().height(10.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        parts.forEachIndexed { i, s ->
+            Box(
+                Modifier
+                    .weight(s.bytes.toFloat().coerceAtLeast(1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(c.acc.copy(alpha = barAlphas[i]))
+            )
+        }
+    }
+    Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        parts.chunked(2).forEachIndexed { row, pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                pair.forEachIndexed { j, s -> LegendCell(ctx, s, barAlphas[row * 2 + j], Modifier.weight(1f)) }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegendCell(ctx: Context, s: Slice, alpha: Float, modifier: Modifier) {
+    val c = Acc.colors
+    Row(modifier, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(c.acc.copy(alpha = alpha)))
+            Text(s.name, style = AccType.small, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(Formatter.formatShortFileSize(ctx, s.bytes), style = AccType.smallMedium, color = c.ink, maxLines = 1)
+    }
+}
+
+@Composable
+private fun Notes(ctx: Context, ui: UiState, onAction: () -> Unit) {
+    val c = Acc.colors
+    val (text, action) = status(ui)
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (text != null) Text(text, style = AccType.small, color = c.mute, textAlign = TextAlign.Center)
+        if (action != null) {
+            Text(
+                action,
+                style = AccType.smallMedium,
+                color = c.acc,
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier.clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 8.dp),
+            )
+        }
+        ui.message?.let { Text(it, style = AccType.small, color = c.ink, textAlign = TextAlign.Center) }
+        lastRunText(ctx, ui)?.let {
+            Text(it, style = AccType.small, color = c.mute, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}
+
+/** Text shown under the button when something needs attention, plus an optional action label. */
+private fun status(ui: UiState): Pair<String?, String?> {
     val neither = if (ui.backend == Backend.Auto) {
         "No Shizuku or root. Pick Accessibility under Access method to clean without them."
     } else null
     return when {
         ui.active != null && !ui.usageAccess ->
             "Usage access is off, so cache size can't be read." to "Open settings"
-        ui.active == Backend.Root -> "Connected via root." to null
-        ui.active == Backend.Shizuku -> "Connected via Shizuku." to null
-        ui.active == Backend.Accessibility ->
-            "Accessibility is on. A clean takes over the screen for a while." to null
+        ui.active == Backend.Accessibility && !ui.cleaning ->
+            "Cleaning opens each app's storage page in Settings. Keep the phone unlocked." to null
+        ui.active != null -> null to null
         ui.backend == Backend.Accessibility -> "The accessibility service is off." to "Open settings"
         ui.backend == Backend.Root -> "Root access isn't available." to "Check again"
         ui.shizuku == ShizukuState.NotInstalled -> (neither ?: "Shizuku isn't installed.") to "Get Shizuku"
@@ -187,7 +252,7 @@ private fun status(ui: UiState): Pair<String, String?> {
     }
 }
 
-private fun lastRunText(ctx: android.content.Context, ui: UiState): String? {
+private fun lastRunText(ctx: Context, ui: UiState): String? {
     if (ui.lastTime == 0L) return null
     val ago = DateUtils.getRelativeTimeSpanString(
         ui.lastTime, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
@@ -199,54 +264,23 @@ private fun lastRunText(ctx: android.content.Context, ui: UiState): String? {
     }
 }
 
-private fun formatTime(h: Int, m: Int) = "%02d:%02d".format(h, m)
-
-@Composable
-private fun Rule() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-@Composable
-private fun Item(
-    title: String,
-    sub: String? = null,
-    onClick: (() -> Unit)? = null,
-    trailing: @Composable (() -> Unit)? = null,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (sub != null) {
-                Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        if (trailing != null) {
-            Spacer(Modifier.width(16.dp))
-            trailing()
-        }
-    }
+private fun cleanSummary(ui: UiState): String {
+    val items = listOfNotNull(
+        if (ui.cleanCache) "app cache" else null,
+        if (ui.cleanJunk) "thumbnails and logs" else null,
+        if (ui.cleanLeftover) "leftover folders" else null,
+    )
+    return if (items.isEmpty()) "Nothing selected" else items.joinToString(", ").replaceFirstChar { it.uppercase() }
 }
 
-@Composable
-private fun AccSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
-    val c = MaterialTheme.colorScheme
-    Switch(
-        checked = checked,
-        onCheckedChange = onChange,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = c.background,
-            checkedTrackColor = c.onBackground,
-            checkedBorderColor = c.onBackground,
-            uncheckedThumbColor = c.outline,
-            uncheckedTrackColor = c.background,
-            uncheckedBorderColor = c.outline,
-        ),
-    )
+private fun accessSummary(ui: UiState): String =
+    if (ui.backend == Backend.Auto) "Auto" + (ui.active?.let { ", using ${it.label}" } ?: "") else ui.backend.label
+
+private fun formatTime(h: Int, m: Int) = "%02d:%02d".format(h, m)
+
+private fun splitSize(s: String): Pair<String, String> {
+    val i = s.indexOfLast { it == ' ' || it == '\u00A0' }
+    return if (i > 0) s.substring(0, i) to s.substring(i + 1) else s to ""
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

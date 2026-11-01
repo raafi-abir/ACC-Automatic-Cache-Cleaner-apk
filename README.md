@@ -28,6 +28,7 @@ Without signing secrets the APK is signed with the debug key. Add `KEYSTORE_BASE
 | `RootBridge` / `Executor` | Runs the same script through `su`, or through Shizuku, depending on the access method. |
 | `clean.sh` | `pm clear --cache-only <pkg>` per app, deletes `Android/data/*/cache`, thumbnails, `logcat -c`, optional leftover folders. With root it also empties `cache` and `code_cache` directly under `/data/user/0` and `/data/user_de/0`. |
 | `CacheScanner` | Per-app cache size via `StorageStatsManager`. |
+| `CleaningService` | Foreground service (type specialUse) that hosts a long accessibility clean and shows progress with a Stop action. |
 | `Scheduler` / `CleanWorker` | WorkManager, 24 h period, first run at the chosen time. |
 
 ## Limits without root
@@ -48,8 +49,14 @@ For each app with at least 1 MB of cache (largest first, 40 apps at most per run
 Storage, then taps Clear cache, as you would by hand.
 
 - It can only clear app cache. Thumbnails, logs, external cache and leftover folders need Shizuku or root.
-- A run takes several seconds per app and takes over the screen. Press Home to stop it.
+- A run takes several seconds per app and takes over the screen. It runs in a foreground service, so Android keeps
+  ACC alive, and the notification has a Stop button. Pressing Home also stops it.
 - The screen must be on and unlocked, so a scheduled run while the phone is locked is skipped and you get a notification.
 - Button labels come from the Settings app's own strings, so they match your language. OEM Settings layouts that
   differ from stock Android may not work.
 - The service only reads and taps Settings windows, and only taps a button labelled exactly "Clear cache".
+
+## Fonts
+
+The UI uses DM Sans (variable font in `app/src/main/res/font/dmsans.ttf`), licensed under the SIL Open Font
+License 1.1. Source: https://github.com/google/fonts/tree/main/ofl/dmsans

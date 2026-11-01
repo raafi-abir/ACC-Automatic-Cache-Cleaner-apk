@@ -52,22 +52,22 @@ class CleanWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
             return Result.success()
         }
         Cleaner.runRecorded(ctx)
-            .onSuccess { Notifier.post(ctx, "Cache cleaned", summary(ctx, it)) }
+            .onSuccess { Notifier.post(ctx, "Cache cleaned", Notifier.summary(ctx, it)) }
             .onFailure { Notifier.post(ctx, "Scheduled clean failed", it.message ?: "Unknown error") }
         // Always success: a failed run must not stop tomorrow's run.
         return Result.success()
     }
+}
 
-    private fun summary(ctx: Context, r: CleanResult): String =
+object Notifier {
+    private const val CHANNEL = "acc_runs"
+
+    fun summary(ctx: Context, r: CleanResult): String =
         if (r.freedBytes >= 0) {
             "Freed " + android.text.format.Formatter.formatFileSize(ctx, r.freedBytes)
         } else {
             "Cleaned ${r.appsCleaned} apps"
         }
-}
-
-object Notifier {
-    private const val CHANNEL = "acc_runs"
 
     fun post(ctx: Context, title: String, text: String) {
         if (Build.VERSION.SDK_INT >= 33 &&

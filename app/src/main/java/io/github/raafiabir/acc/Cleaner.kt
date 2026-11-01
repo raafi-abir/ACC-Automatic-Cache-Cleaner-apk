@@ -7,6 +7,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** True while any clean (manual or scheduled) is running. */
+object RunState {
+    val running = kotlinx.coroutines.flow.MutableStateFlow(false)
+}
+
 /** [freedBytes] is -1 when usage access is missing and the size couldn't be measured. */
 data class CleanResult(val freedBytes: Long, val appsCleaned: Int)
 
@@ -88,17 +93,26 @@ object Cleaner {
     }
 
     /** Runs a clean and stores the outcome so the UI can show it later. */
-    suspend fun runRecorded(ctx: Context): kotlin.Result<CleanResult> = withContext(Dispatchers.Default) {
-        val prefs = Prefs(ctx)
+    suspend fun runRecorded(ctx: Context): kotlin.Result<CleanResult> {
+        if (!RunState.running.compareAndSet(false, true)) {
+            return kotlin.Result.failure(IllegalStateException("Already cleaning"))
+        }
         try {
-            val r = run(ctx)
-            prefs.saveLast(System.currentTimeMillis(), r.freedBytes, null)
-            kotlin.Result.success(r)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            prefs.saveLast(System.currentTimeMillis(), -1L, e.message ?: "Cleaning failed")
-            kotlin.Result.failure(e)
+            return withContext(Dispatchers.Default) {
+                val prefs = Prefs(ctx)
+                try {
+                    val r = run(ctx)
+                    prefs.saveLast(System.currentTimeMillis(), r.freedBytes, null)
+                    kotlin.Result.success(r)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    prefs.saveLast(System.currentTimeMillis(), -1L, e.message ?: "Cleaning failed")
+                    kotlin.Result.failure(e)
+                }
+            }
+        } finally {
+            RunState.running.value = false
         }
     }
 }

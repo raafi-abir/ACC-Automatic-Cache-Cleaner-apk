@@ -1,24 +1,35 @@
 package io.github.raafiabir.acc
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 
+/** One of the largest caches, for the bar on the home screen. */
+data class Slice(val name: String, val bytes: Long)
+
 data class UiState(
+    val setupDone: Boolean = false,
     val shizuku: ShizukuState = ShizukuState.NotRunning,
     val backend: Backend = Backend.Auto,
     /** The backend that will actually run, or null if none is usable. */
     val active: Backend? = null,
     val usageAccess: Boolean = true,
+    val notifications: Boolean = true,
     val scanning: Boolean = false,
     val cacheBytes: Long? = null,
     val cacheApps: Int = 0,
+    val top: List<Slice> = emptyList(),
     val cleaning: Boolean = false,
     val progress: String? = null,
     val lastTime: Long = 0L,
@@ -53,6 +64,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             AccessibilityCleaner.progress.collect { p -> _ui.update { it.copy(progress = p) } }
         }
+        viewModelScope.launch {
+            RunState.running.collect { running ->
+                val was = _ui.value.cleaning
+                _ui.update { it.copy(cleaning = running) }
+                if (was && !running) {
+                    _ui.update {
+                        it.copy(lastTime = prefs.lastTime, lastFreed = prefs.lastFreed, lastError = prefs.lastError)
+                    }
+                    scan()
+                }
+            }
+        }
         Shizuku.addBinderReceivedListenerSticky(onBinder)
         Shizuku.addBinderDeadListener(onDead)
         Shizuku.addRequestPermissionResultListener(onPermission)
@@ -65,6 +88,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun fromPrefs() = UiState(
+        setupDone = prefs.setupDone,
         backend = prefs.backend,
         lastTime = prefs.lastTime,
         lastFreed = prefs.lastFreed,
@@ -78,12 +102,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         excluded = prefs.excluded,
     )
 
-    /** Re-reads Shizuku state, grants usage access if possible, and rescans. */
+    private fun notificationsGranted(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** Re-reads access state, grants usage access if possible, and rescans. */
     fun refresh() {
         viewModelScope.launch {
             val state = ShizukuBridge.state(ctx)
             val active = Executor.resolve(ctx)
-            _ui.update { it.copy(shizuku = state, backend = prefs.backend, active = active) }
+            _ui.update {
+                it.copy(shizuku = state, backend = prefs.backend, active = active, notifications = notificationsGranted())
+            }
 
             // Shell backends can grant usage access themselves; accessibility mode needs you to.
             if (active != null && active != Backend.Accessibility && !scanner.hasUsageAccess()) {
@@ -99,13 +129,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(scanning = true) }
         val access = scanner.hasUsageAccess()
         val map = if (access) scanner.scanCaches() else null
-        _ui.update { s ->
-            val counted = map?.filter { it.key !in s.excluded && it.key != ctx.packageName }
-            s.copy(
+        val excluded = _ui.value.excluded
+        val counted = map?.filter { it.key !in excluded && it.key != ctx.packageName && it.value > 0 }
+        val top = if (counted != null) {
+            withContext(Dispatchers.IO) {
+                val pm = ctx.packageManager
+                counted.entries.sortedByDescending { it.value }.take(3).map { e ->
+                    val name = runCatching { pm.getApplicationInfo(e.key, 0).loadLabel(pm).toString() }
+                        .getOrDefault(e.key)
+                    Slice(name, e.value)
+                }
+            }
+        } else emptyList()
+        _ui.update {
+            it.copy(
                 scanning = false,
                 usageAccess = access,
                 cacheBytes = counted?.values?.sum(),
-                cacheApps = counted?.count { it.value > 0 } ?: 0,
+                cacheApps = counted?.size ?: 0,
+                top = top,
             )
         }
     }
@@ -115,7 +157,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun clean() {
         if (_ui.value.cleaning) return
         viewModelScope.launch {
-            if (Executor.resolve(ctx) == null) {
+            val backend = Executor.resolve(ctx)
+            if (backend == null) {
                 val askShizuku = prefs.backend != Backend.Root &&
                     ShizukuBridge.state(ctx) == ShizukuState.NeedsPermission
                 if (askShizuku) {
@@ -126,19 +169,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 return@launch
             }
-            _ui.update { it.copy(cleaning = true, message = null) }
-            val result = Cleaner.runRecorded(ctx)
-            _ui.update {
-                it.copy(
-                    cleaning = false,
-                    lastTime = prefs.lastTime,
-                    lastFreed = prefs.lastFreed,
-                    lastError = prefs.lastError,
-                )
+            _ui.update { it.copy(message = null) }
+            if (backend == Backend.Accessibility) {
+                CleaningService.start(ctx) // long run: lives in a foreground service
+            } else {
+                Cleaner.runRecorded(ctx)
             }
-            scan()
-            result.onFailure { e -> _ui.update { it.copy(message = e.message ?: "Cleaning failed") } }
         }
+    }
+
+    fun stop() = CleaningService.stop(ctx)
+
+    fun finishSetup() {
+        prefs.setupDone = true
+        _ui.update { it.copy(setupDone = true) }
     }
 
     fun setBackend(b: Backend) {
@@ -146,8 +190,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(backend = b) }
         refresh()
     }
-
-    fun cycleBackend() = setBackend(prefs.backend.next())
 
     fun recheckRoot() {
         viewModelScope.launch {

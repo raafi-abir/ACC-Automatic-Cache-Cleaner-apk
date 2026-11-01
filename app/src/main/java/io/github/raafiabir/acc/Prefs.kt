@@ -5,6 +5,10 @@ import android.content.Context
 class Prefs(context: Context) {
     private val sp = context.applicationContext.getSharedPreferences("acc", Context.MODE_PRIVATE)
 
+    var setupDone: Boolean
+        get() = sp.getBoolean("setup_done", false)
+        set(v) { sp.edit().putBoolean("setup_done", v).apply() }
+
     var scheduleOn: Boolean
         get() = sp.getBoolean("schedule_on", false)
         set(v) { sp.edit().putBoolean("schedule_on", v).apply() }
