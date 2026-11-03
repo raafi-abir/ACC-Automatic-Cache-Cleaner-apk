@@ -22,19 +22,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.raafiabir.acc.R
 
-/** The whole palette: two neutrals, a surface, a hairline and one green accent. */
+/** The whole palette: neutrals only, matching the logo. Emphasis is ink on paper, never a hue. */
 class AccColors(
     val bg: Color, val surface: Color, val ink: Color, val mute: Color,
     val line: Color, val acc: Color, val onAcc: Color,
 )
 
 private val LightAcc = AccColors(
-    bg = Color(0xFFF3F5F4), surface = Color(0xFFFFFFFF), ink = Color(0xFF101413), mute = Color(0xFF5E6764),
-    line = Color(0xFFE2E7E5), acc = Color(0xFF17795A), onAcc = Color(0xFFFFFFFF),
+    bg = Color(0xFFF4F4F5), surface = Color(0xFFFFFFFF), ink = Color(0xFF0B0B0D), mute = Color(0xFF62626A),
+    line = Color(0xFFE4E4E7), acc = Color(0xFF0B0B0D), onAcc = Color(0xFFFFFFFF),
 )
 private val DarkAcc = AccColors(
-    bg = Color(0xFF0C0F0E), surface = Color(0xFF151A18), ink = Color(0xFFEEF3F1), mute = Color(0xFF9AA6A2),
-    line = Color(0xFF262E2B), acc = Color(0xFF5FD3A6), onAcc = Color(0xFF06241A),
+    bg = Color(0xFF0B0B0D), surface = Color(0xFF151518), ink = Color(0xFFF2F2F3), mute = Color(0xFF9A9AA2),
+    line = Color(0xFF26262B), acc = Color(0xFFF2F2F3), onAcc = Color(0xFF0B0B0D),
 )
 
 val LocalAcc = staticCompositionLocalOf { LightAcc }
