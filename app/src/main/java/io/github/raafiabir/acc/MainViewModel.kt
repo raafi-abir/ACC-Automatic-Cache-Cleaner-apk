@@ -135,7 +135,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         accessOffAfter = prefs.accessibilityOffAfter,
         repeatMode = prefs.repeatMode,
         customDays = prefs.customDays,
-        canSecure = AccessibilityToggle.canWriteSecure(app),
+        canSecure = AccessibilityToggle.canWriteSecure(ctx),
         updateCheck = prefs.updateCheck,
         lastUpdateCheck = prefs.lastUpdateCheck,
         updateError = prefs.updateError,
