@@ -262,7 +262,9 @@ private fun lastRunText(ctx: Context, ui: UiState): String? {
     ).toString().lowercase()
     return when {
         ui.lastError != null -> "Last run $ago failed: ${ui.lastError}."
-        ui.lastFreed >= 0 -> "Last cleaned $ago, freed ${Formatter.formatFileSize(ctx, ui.lastFreed)}."
+        ui.lastFreed >= 0 ->
+            "Last cleaned $ago, freed ${Formatter.formatFileSize(ctx, ui.lastFreed)}" +
+                (if (ui.lastRemaining >= 5L shl 20) ", ${Formatter.formatFileSize(ctx, ui.lastRemaining)} left" else "") + "."
         else -> "Last cleaned $ago."
     }
 }

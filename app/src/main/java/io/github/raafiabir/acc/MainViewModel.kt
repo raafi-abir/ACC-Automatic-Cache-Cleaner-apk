@@ -36,6 +36,8 @@ data class UiState(
     val lastFreed: Long = -1L,
     val lastError: String? = null,
     val lastLog: String = "",
+    val lastRemaining: Long = -1L,
+    val a11yAll: Boolean = false,
     val scheduleOn: Boolean = false,
     val hour: Int = 0,
     val minute: Int = 0,
@@ -97,6 +99,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             lastFreed = prefs.lastFreed,
                             lastError = prefs.lastError,
                             lastLog = prefs.lastLog,
+                            lastRemaining = prefs.lastRemaining,
                         )
                     }
                     scan()
@@ -125,6 +128,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         lastFreed = prefs.lastFreed,
         lastError = prefs.lastError,
         lastLog = prefs.lastLog,
+        lastRemaining = prefs.lastRemaining,
+        a11yAll = prefs.a11yAll,
         scheduleOn = prefs.scheduleOn,
         hour = prefs.hour,
         minute = prefs.minute,
@@ -302,6 +307,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(updateCheck = on) }
         UpdateScheduler.apply(ctx)
         if (on) checkUpdates()
+    }
+
+    fun setA11yAll(on: Boolean) {
+        prefs.a11yAll = on
+        _ui.update { it.copy(a11yAll = on) }
     }
 
     fun setCache(on: Boolean) { prefs.cleanCache = on; _ui.update { it.copy(cleanCache = on) } }

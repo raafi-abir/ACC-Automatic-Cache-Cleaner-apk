@@ -43,6 +43,7 @@ fun WhatToCleanScreen(
     onCache: (Boolean) -> Unit,
     onJunk: (Boolean) -> Unit,
     onLeftover: (Boolean) -> Unit,
+    onAll: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     SubScreen("What to clean", onBack) {
@@ -56,6 +57,14 @@ fun WhatToCleanScreen(
                 "Deletes data folders of uninstalled apps. Can't be undone.",
                 ui.cleanLeftover,
                 onLeftover,
+            )
+        }
+        Panel(Modifier.padding(top = 12.dp)) {
+            SwitchRow(
+                "Clean every app",
+                "Accessibility mode only. Removes the limit of 40 apps and the 1 MB minimum, so it takes much longer.",
+                ui.a11yAll,
+                onAll,
             )
         }
         Text(

@@ -28,9 +28,18 @@ if [ "$DO_CACHE" = 1 ]; then
   fi
   if [ "$TRIM_RC" != 0 ]; then
     # Per-app clear: needed when apps are excluded, and the fallback if the global trim failed.
+    FAILS=0
     for p in $PKGS; do
       case "$(run 10 pm clear --cache-only "$p" 2>&1)" in
-        *Success*) OK=$((OK + 1)) ;;
+        *Success*)
+          OK=$((OK + 1))
+          FAILS=0
+          ;;
+        *)
+          FAILS=$((FAILS + 1))
+          # Refused three times in a row with no success: this phone won't do it, stop wasting time.
+          if [ "$OK" -eq 0 ] && [ "$FAILS" -ge 3 ]; then break; fi
+          ;;
       esac
     done
   fi

@@ -58,6 +58,7 @@ fun App(vm: MainViewModel, actions: AppActions) {
                 onCache = vm::setCache,
                 onJunk = vm::setJunk,
                 onLeftover = vm::setLeftover,
+                onAll = vm::setA11yAll,
                 onBack = { screen = "home" },
             )
             "access" -> AccessScreen(

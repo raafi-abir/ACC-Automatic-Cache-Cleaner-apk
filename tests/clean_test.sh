@@ -48,7 +48,7 @@ fixture() { # $1 = dir
 # run DIR ROOT DO_LEFT ALLOW_TRIM  (env: PM_TRIM, PM_CLEAR, PM_LIST_N)
 run() {
   {
-    echo "PKGS='com.keep com.skip'"
+    echo "PKGS='${T_PKGS:-com.keep com.skip}'"
     echo "EXCL=' com.skip '"
     echo "DO_CACHE=1"; echo "DO_JUNK=1"; echo "DO_LEFT=$3"; echo "ALLOW_TRIM=$4"; echo "ROOT=$2"; echo "SELF=com.me"
     cat "$SCRIPT"
@@ -84,6 +84,11 @@ check "result reports ok=2 trim=-"         "echo '$OUT' | grep -q 'ok=2 .*trim=-
 echo "# nothing works"
 fixture "$T/d"; OUT=$(PM_CLEAR=fail run "$T/d" 0 0 0)
 check "ok=0 so the app can report an error" "echo '$OUT' | grep -q 'ok=0'"
+
+echo "# single-app clearing refused: give up after three tries"
+fixture "$T/h"; OUT=$(T_PKGS="a.a b.b c.c d.d e.e" PM_CLEAR=fail run "$T/h" 0 0 0)
+check "stopped after 3 calls, not 5"       "[ \$(grep -c '^clear' $T/h/pm.log) -eq 3 ]"
+check "still reports ok=0"                 "echo '$OUT' | grep -q 'ok=0'"
 
 echo "# root"
 fixture "$T/e"; PM_TRIM=ok run "$T/e" 1 0 1 >/dev/null

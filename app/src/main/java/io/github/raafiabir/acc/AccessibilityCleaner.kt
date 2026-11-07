@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
@@ -32,6 +33,11 @@ object AccessibilityCleaner {
             val pm = ctx.packageManager
             var cleaned = 0
             var stopped = false
+            // A long run must not let the screen time out halfway.
+            @Suppress("DEPRECATION")
+            val screenLock = ctx.getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "ACC:clean")
+                .apply { acquire(60 * 60_000L) }
             try {
                 packages.forEachIndexed { i, pkg ->
                     val name = runCatching { pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString() }.getOrDefault(pkg)
@@ -43,6 +49,7 @@ object AccessibilityCleaner {
                     if (cleanOne(svc, settingsPkg, labels, pkg, name)) cleaned++
                 }
             } finally {
+                if (screenLock.isHeld) screenLock.release()
                 progress.value = null
                 // Hand the screen back to ACC, unless the user walked away on purpose.
                 if (!stopped) {

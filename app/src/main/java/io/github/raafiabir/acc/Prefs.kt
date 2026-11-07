@@ -14,6 +14,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("a11y_off_after", true)
         set(v) { sp.edit().putBoolean("a11y_off_after", v).apply() }
 
+    /** Accessibility mode: clean every app instead of the 40 largest caches. */
+    var a11yAll: Boolean
+        get() = sp.getBoolean("a11y_all", false)
+        set(v) { sp.edit().putBoolean("a11y_all", v).apply() }
+
     /** "daily", "weekly", "monthly" or "custom". */
     var repeatMode: String
         get() = sp.getString("repeat_mode", "daily") ?: "daily"
@@ -106,7 +111,11 @@ class Prefs(context: Context) {
 
     val lastError: String? get() = sp.getString("last_error", null)
 
-    fun saveLast(time: Long, freed: Long, error: String?) {
-        sp.edit().putLong("last_time", time).putLong("last_freed", freed).putString("last_error", error).apply()
+    /** Cache still left after the last clean, -1 if unknown. */
+    val lastRemaining: Long get() = sp.getLong("last_remaining", -1L)
+
+    fun saveLast(time: Long, freed: Long, error: String?, remaining: Long = -1L) {
+        sp.edit().putLong("last_time", time).putLong("last_freed", freed).putString("last_error", error)
+            .putLong("last_remaining", remaining).apply()
     }
 }

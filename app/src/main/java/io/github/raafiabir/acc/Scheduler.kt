@@ -54,7 +54,7 @@ class CleanWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
             Notifier.post(ctx, "Scheduled clean skipped", "Start Shizuku, allow root or turn on accessibility, then clean from the app.")
             return Result.success()
         }
-        Cleaner.runRecorded(ctx)
+        Cleaner.runRecorded(ctx, scheduled = true)
             .onSuccess { Notifier.post(ctx, "Cache cleaned", Notifier.summary(ctx, it)) }
             .onFailure { Notifier.post(ctx, "Scheduled clean failed", it.message ?: "Unknown error") }
         // Always success: a failed run must not stop tomorrow's run.
@@ -67,7 +67,9 @@ object Notifier {
 
     fun summary(ctx: Context, r: CleanResult): String =
         when {
-            r.freedBytes >= 0 -> "Freed " + android.text.format.Formatter.formatFileSize(ctx, r.freedBytes)
+            r.freedBytes >= 0 ->
+                "Freed " + android.text.format.Formatter.formatFileSize(ctx, r.freedBytes) +
+                    (if (r.appsTried > r.appsCleaned) " (${r.appsCleaned} of ${r.appsTried} apps)" else "")
             r.appsCleaned > 0 -> "Cleaned ${r.appsCleaned} apps"
             else -> "Done"
         }

@@ -48,6 +48,8 @@ Without signing secrets the APK is signed with the debug key. Add `KEYSTORE_BASE
 ## Limits without root
 
 - Shizuku in ADB mode (not root) can't delete other apps' private files directly. App cache goes through `pm trim-caches`, which clears every app and can't skip any. With excluded apps ACC has to clear apps one by one with `pm clear --cache-only`, which some Android versions refuse for the shell user. In that case the run fails with an explanation instead of silently doing nothing, and you can remove the exclusions to use the global clean.
+- After the main pass ACC measures again and clears any app still holding 256 KB or more one by one, then shows how much
+  is left ("freed 812 MB, 40 MB left"). Some cache always comes back, because running apps rebuild it straight away.
 - If a clean fails, Access method > Copy last clean log copies the script output for a bug report.
 - If Shizuku isn't running at the scheduled time (it has to be restarted after every reboot in ADB mode), the run is skipped and you get a notification.
 - WorkManager is approximate. The clean runs around the chosen time, not on the second.
@@ -60,8 +62,9 @@ sideloaded app is blocked first: open ACC's App info, tap the three-dot menu, ch
 settings", then enable the service. Also grant usage access (the status link opens it) so ACC knows which apps
 have cache.
 
-For each app with at least 1 MB of cache (largest first, 40 apps at most per run) ACC opens App info, then
-Storage, then taps Clear cache, as you would by hand.
+By default, for each app with at least 1 MB of cache (largest first, 40 apps at most per run) ACC opens App info,
+then Storage, then taps Clear cache, as you would by hand. Turn on "Clean every app" under What to clean to remove
+both limits (manual runs only, and it takes much longer). The screen is kept on during a run.
 
 - It can only clear app cache. Thumbnails, logs, external cache and leftover folders need Shizuku or root.
 - A run takes several seconds per app and takes over the screen. It runs in a foreground service, so Android keeps
