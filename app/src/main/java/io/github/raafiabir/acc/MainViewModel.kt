@@ -35,6 +35,7 @@ data class UiState(
     val lastTime: Long = 0L,
     val lastFreed: Long = -1L,
     val lastError: String? = null,
+    val lastLog: String = "",
     val scheduleOn: Boolean = false,
     val hour: Int = 0,
     val minute: Int = 0,
@@ -43,7 +44,28 @@ data class UiState(
     val cleanLeftover: Boolean = false,
     val excluded: Set<String> = emptySet(),
     val message: String? = null,
-)
+    val canSecure: Boolean = false,
+    val version: String = BuildConfig.VERSION_NAME,
+    val updateCheck: Boolean = true,
+    val checkingUpdate: Boolean = false,
+    val updateVersion: String? = null,
+    val updatePage: String? = null,
+    val updateApk: String? = null,
+    val updateNotes: String = "",
+    val updateError: String? = null,
+    val lastUpdateCheck: Long = 0L,
+    val accessOffAfter: Boolean = true,
+    val repeatMode: String = "daily",
+    val customDays: Int = 3,
+) {
+    val intervalDays: Int
+        get() = when (repeatMode) {
+            "weekly" -> 7
+            "monthly" -> 30
+            "custom" -> customDays
+            else -> 1
+        }
+}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val ctx = app
@@ -70,7 +92,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _ui.update { it.copy(cleaning = running) }
                 if (was && !running) {
                     _ui.update {
-                        it.copy(lastTime = prefs.lastTime, lastFreed = prefs.lastFreed, lastError = prefs.lastError)
+                        it.copy(
+                            lastTime = prefs.lastTime,
+                            lastFreed = prefs.lastFreed,
+                            lastError = prefs.lastError,
+                            lastLog = prefs.lastLog,
+                        )
                     }
                     scan()
                 }
@@ -79,6 +106,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         Shizuku.addBinderReceivedListenerSticky(onBinder)
         Shizuku.addBinderDeadListener(onDead)
         Shizuku.addRequestPermissionResultListener(onPermission)
+
+        UpdateScheduler.apply(ctx)
+        // Look once per launch if the last check is more than half a day old.
+        if (prefs.updateCheck && System.currentTimeMillis() - prefs.lastUpdateCheck > 12 * 3_600_000L) checkUpdates()
     }
 
     override fun onCleared() {
@@ -93,6 +124,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         lastTime = prefs.lastTime,
         lastFreed = prefs.lastFreed,
         lastError = prefs.lastError,
+        lastLog = prefs.lastLog,
         scheduleOn = prefs.scheduleOn,
         hour = prefs.hour,
         minute = prefs.minute,
@@ -100,6 +132,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         cleanJunk = prefs.cleanJunk,
         cleanLeftover = prefs.cleanLeftover,
         excluded = prefs.excluded,
+        accessOffAfter = prefs.accessibilityOffAfter,
+        repeatMode = prefs.repeatMode,
+        customDays = prefs.customDays,
+        canSecure = AccessibilityToggle.canWriteSecure(app),
+        updateCheck = prefs.updateCheck,
+        lastUpdateCheck = prefs.lastUpdateCheck,
+        updateError = prefs.updateError,
+        // A stored update only counts while it is still newer than the installed version.
+        updateVersion = prefs.updateVersion?.takeIf { Versions.isNewer(it, BuildConfig.VERSION_NAME) },
+        updatePage = prefs.updatePage,
+        updateApk = prefs.updateApk,
+        updateNotes = prefs.updateNotes,
     )
 
     private fun notificationsGranted(): Boolean =
@@ -112,7 +156,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val state = ShizukuBridge.state(ctx)
             val active = Executor.resolve(ctx)
             _ui.update {
-                it.copy(shizuku = state, backend = prefs.backend, active = active, notifications = notificationsGranted())
+                it.copy(
+                    shizuku = state,
+                    backend = prefs.backend,
+                    active = active,
+                    notifications = notificationsGranted(),
+                    canSecure = AccessibilityToggle.canWriteSecure(ctx),
+                )
             }
 
             // Shell backends can grant usage access themselves; accessibility mode needs you to.
@@ -209,6 +259,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.minute = minute
         _ui.update { it.copy(hour = hour, minute = minute) }
         Scheduler.apply(ctx)
+    }
+
+    fun setAccessOffAfter(on: Boolean) {
+        prefs.accessibilityOffAfter = on
+        _ui.update { it.copy(accessOffAfter = on) }
+    }
+
+    fun setRepeat(mode: String) {
+        prefs.repeatMode = mode
+        _ui.update { it.copy(repeatMode = mode) }
+        Scheduler.apply(ctx)
+    }
+
+    fun setCustomDays(days: Int) {
+        prefs.customDays = days
+        _ui.update { it.copy(customDays = prefs.customDays) }
+        Scheduler.apply(ctx)
+    }
+
+    fun checkUpdates() {
+        if (_ui.value.checkingUpdate) return
+        viewModelScope.launch {
+            _ui.update { it.copy(checkingUpdate = true) }
+            UpdateChecker.check(ctx)
+            _ui.update {
+                it.copy(
+                    checkingUpdate = false,
+                    lastUpdateCheck = prefs.lastUpdateCheck,
+                    updateError = prefs.updateError,
+                    updateVersion = prefs.updateVersion?.takeIf { v -> Versions.isNewer(v, BuildConfig.VERSION_NAME) },
+                    updatePage = prefs.updatePage,
+                    updateApk = prefs.updateApk,
+                    updateNotes = prefs.updateNotes,
+                )
+            }
+        }
+    }
+
+    fun setUpdateCheck(on: Boolean) {
+        prefs.updateCheck = on
+        _ui.update { it.copy(updateCheck = on) }
+        UpdateScheduler.apply(ctx)
+        if (on) checkUpdates()
     }
 
     fun setCache(on: Boolean) { prefs.cleanCache = on; _ui.update { it.copy(cleanCache = on) } }

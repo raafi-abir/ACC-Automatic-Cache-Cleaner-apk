@@ -4,8 +4,11 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -31,7 +34,7 @@ object Scheduler {
         var next = now.withHour(prefs.hour).withMinute(prefs.minute).withSecond(0).withNano(0)
         if (!next.isAfter(now)) next = next.plusDays(1)
 
-        val request = PeriodicWorkRequestBuilder<CleanWorker>(24, TimeUnit.HOURS)
+        val request = PeriodicWorkRequestBuilder<CleanWorker>(prefs.intervalDays.toLong(), TimeUnit.DAYS)
             .setInitialDelay(Duration.between(now, next).toMillis(), TimeUnit.MILLISECONDS)
             .build()
         wm.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
@@ -63,11 +66,33 @@ object Notifier {
     private const val CHANNEL = "acc_runs"
 
     fun summary(ctx: Context, r: CleanResult): String =
-        if (r.freedBytes >= 0) {
-            "Freed " + android.text.format.Formatter.formatFileSize(ctx, r.freedBytes)
-        } else {
-            "Cleaned ${r.appsCleaned} apps"
+        when {
+            r.freedBytes >= 0 -> "Freed " + android.text.format.Formatter.formatFileSize(ctx, r.freedBytes)
+            r.appsCleaned > 0 -> "Cleaned ${r.appsCleaned} apps"
+            else -> "Done"
         }
+
+    fun postUpdate(ctx: Context, info: UpdateInfo) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val page = info.pageUrl ?: return
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel("acc_updates", "App updates", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+        val open = PendingIntent.getActivity(
+            ctx, 3, Intent(Intent.ACTION_VIEW, Uri.parse(page)), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = Notification.Builder(ctx, "acc_updates")
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("ACC ${info.version} is available")
+            .setContentText("Tap to see what's new and download it.")
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(3, n)
+    }
 
     fun post(ctx: Context, title: String, text: String) {
         if (Build.VERSION.SDK_INT >= 33 &&

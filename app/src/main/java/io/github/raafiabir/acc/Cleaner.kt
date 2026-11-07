@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.PowerManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** True while any clean (manual or scheduled) is running. */
@@ -51,9 +52,25 @@ object Cleaner {
         }
 
         val out = Executor.exec(ctx, backend, script)
-        val cleaned = Regex("ok=(\\d+)").find(out)?.groupValues?.get(1)?.toIntOrNull()
-            ?: throw IllegalStateException("Cleaning script didn't finish")
+        prefs.lastLog = out.takeLast(4_000)
+        val ok = Regex("ok=(\\d+)").find(out)?.groupValues?.get(1)?.toIntOrNull()
+            ?: throw IllegalStateException("The cleaning script didn't finish. " + out.trim().takeLast(160))
+        val trimOk = Regex("trim=(\\d+|-)").find(out)?.groupValues?.get(1) == "0"
+        val err = Regex("err=(.*)").find(out)?.groupValues?.get(1)?.trim()
 
+        // Nothing worked for the cache step: say why instead of reporting a silent success.
+        if (prefs.cleanCache && targets.isNotEmpty() && !trimOk && ok == 0) {
+            throw IllegalStateException(
+                if (excluded.isEmpty()) {
+                    "Android refused to clear caches" + (if (!err.isNullOrBlank()) ": $err" else "")
+                } else {
+                    "This Android version won't clear single apps. Remove the excluded apps to use the global clean."
+                }
+            )
+        }
+        val cleaned = if (trimOk) (if (before != null) targets.size else 0) else ok
+
+        delay(1_500) // let Android refresh its storage numbers before measuring again
         val after = if (hasAccess) scanner.scanCaches() else null
         val freed = if (before != null && after != null) {
             (before.values.sum() - after.values.sum()).coerceAtLeast(0L)
@@ -66,30 +83,37 @@ object Cleaner {
         ctx: Context, prefs: Prefs, scanner: CacheScanner, excluded: Set<String>,
     ): CleanResult {
         if (!prefs.cleanCache) throw IllegalStateException("App cache is off. This mode can only clear app cache.")
-        val svc = CacheAccessibilityService.instance
-            ?: throw IllegalStateException("The accessibility service isn't running")
         val power = ctx.getSystemService(PowerManager::class.java)
         val keyguard = ctx.getSystemService(KeyguardManager::class.java)
         if (!power.isInteractive || keyguard.isKeyguardLocked) {
             throw IllegalStateException("The phone is locked or the screen is off")
         }
+        // With WRITE_SECURE_SETTINGS the service is switched on just for this run.
+        if (CacheAccessibilityService.instance == null) AccessibilityToggle.ensureEnabled(ctx)
+        val svc = CacheAccessibilityService.instance
+            ?: throw IllegalStateException("The accessibility service isn't running")
 
-        val before = if (scanner.hasUsageAccess()) scanner.scanCaches() else null
-        val candidates = if (before != null) {
-            before.filterValues { it >= A11Y_MIN_BYTES }.entries.sortedByDescending { it.value }.map { it.key }
-        } else {
-            scanner.userPackages()
+        try {
+            val before = if (scanner.hasUsageAccess()) scanner.scanCaches() else null
+            val candidates = if (before != null) {
+                before.filterValues { it >= A11Y_MIN_BYTES }.entries.sortedByDescending { it.value }.map { it.key }
+            } else {
+                scanner.userPackages()
+            }
+            val targets = candidates.filter { it != ctx.packageName && it !in excluded }.take(A11Y_MAX_APPS)
+            if (targets.isEmpty()) return CleanResult(if (before != null) 0L else -1L, 0)
+
+            val cleaned = AccessibilityCleaner.run(ctx, svc, targets)
+
+            val after = if (before != null) scanner.scanCaches() else null
+            val freed = if (before != null && after != null) {
+                (before.values.sum() - after.values.sum()).coerceAtLeast(0L)
+            } else -1L
+            return CleanResult(freed, cleaned)
+        } finally {
+            // Banking apps such as bKash can refuse to run while an accessibility service is on.
+            if (prefs.accessibilityOffAfter) svc.disableSelf()
         }
-        val targets = candidates.filter { it != ctx.packageName && it !in excluded }.take(A11Y_MAX_APPS)
-        if (targets.isEmpty()) return CleanResult(if (before != null) 0L else -1L, 0)
-
-        val cleaned = AccessibilityCleaner.run(ctx, svc, targets)
-
-        val after = if (before != null) scanner.scanCaches() else null
-        val freed = if (before != null && after != null) {
-            (before.values.sum() - after.values.sum()).coerceAtLeast(0L)
-        } else -1L
-        return CleanResult(freed, cleaned)
     }
 
     /** Runs a clean and stores the outcome so the UI can show it later. */

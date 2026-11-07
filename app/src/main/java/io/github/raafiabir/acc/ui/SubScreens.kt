@@ -5,6 +5,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
@@ -59,8 +67,13 @@ fun WhatToCleanScreen(
     }
 }
 
+private const val GRANT_COMMAND =
+    "adb shell pm grant io.github.raafiabir.acc android.permission.WRITE_SECURE_SETTINGS"
+
 @Composable
-fun AccessScreen(ui: UiState, onChoose: (Backend) -> Unit, onBack: () -> Unit) {
+fun AccessScreen(ui: UiState, onChoose: (Backend) -> Unit, onOffAfter: (Boolean) -> Unit, onBack: () -> Unit) {
+    val c = Acc.colors
+    val clipboard = LocalClipboardManager.current
     val options = listOf(
         Backend.Auto to "Tries Shizuku, then root, then accessibility.",
         Backend.Shizuku to "Fast and silent. Needs the Shizuku app running.",
@@ -68,20 +81,168 @@ fun AccessScreen(ui: UiState, onChoose: (Backend) -> Unit, onBack: () -> Unit) {
         Backend.Accessibility to "No extra tools. Slower, and it takes over the screen.",
     )
     SubScreen("Access method", onBack) {
-        Panel {
-            options.forEachIndexed { i, (backend, description) ->
-                if (i > 0) Hairline()
-                ListRow(backend.label, description, onClick = { onChoose(backend) }) {
-                    RadioDot(ui.backend == backend)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Panel {
+                options.forEachIndexed { i, (backend, description) ->
+                    if (i > 0) Hairline()
+                    ListRow(backend.label, description, onClick = { onChoose(backend) }) {
+                        RadioDot(ui.backend == backend)
+                    }
                 }
             }
+            Text(
+                text = ui.active?.let { "Using ${it.label} right now." } ?: "Nothing is available right now.",
+                style = AccType.small,
+                color = c.mute,
+                modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+            )
+
+            Text(
+                "Accessibility mode",
+                style = AccType.smallMedium,
+                color = c.mute,
+                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 4.dp),
+            )
+            Panel {
+                SwitchRow(
+                    "Turn it off after cleaning",
+                    "Banking apps such as bKash can refuse to run while an accessibility service is on.",
+                    ui.accessOffAfter,
+                    onOffAfter,
+                )
+            }
+            if (ui.canSecure) {
+                Text(
+                    "ACC switches the service on by itself for each clean, so it only runs while cleaning.",
+                    style = AccType.small,
+                    color = c.mute,
+                    modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+                )
+            } else {
+                Text(
+                    "To let ACC switch it on by itself, run this once from a computer with USB debugging:",
+                    style = AccType.small,
+                    color = c.mute,
+                    modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+                )
+                Panel(Modifier.padding(top = 8.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        SelectionContainer {
+                            Text(
+                                GRANT_COMMAND,
+                                style = AccType.small.copy(fontFamily = FontFamily.Monospace),
+                                color = c.ink,
+                            )
+                        }
+                        Row(Modifier.padding(top = 12.dp)) {
+                            SmallButton("Copy command", { clipboard.setText(AnnotatedString(GRANT_COMMAND)) }, ghost = true)
+                        }
+                    }
+                }
+            }
+
+            Text(
+                "Diagnostics",
+                style = AccType.smallMedium,
+                color = c.mute,
+                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 4.dp),
+            )
+            Panel {
+                val hasLog = ui.lastLog.isNotBlank()
+                ListRow(
+                    "Copy last clean log",
+                    if (hasLog) "Paste it into a bug report" else "Nothing recorded yet",
+                    onClick = if (hasLog) ({ clipboard.setText(AnnotatedString(ui.lastLog)) }) else null,
+                )
+            }
         }
-        Text(
-            text = ui.active?.let { "Using ${it.label} right now." } ?: "Nothing is available right now.",
-            style = AccType.small,
-            color = Acc.colors.mute,
-            modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+    }
+}
+
+@Composable
+fun ScheduleScreen(
+    ui: UiState,
+    onToggle: (Boolean) -> Unit,
+    onTime: (Int, Int) -> Unit,
+    onRepeat: (String) -> Unit,
+    onCustomDays: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    val c = Acc.colors
+    var pickTime by remember { mutableStateOf(false) }
+    val modes = listOf(
+        Triple("daily", "Every day", null),
+        Triple("weekly", "Every week", "Every 7 days"),
+        Triple("monthly", "Every month", "Every 30 days"),
+        Triple("custom", "Custom", "Every ${ui.customDays} days"),
+    )
+    SubScreen("Scheduled cleaning", onBack) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Panel { SwitchRow("Clean automatically", if (ui.scheduleOn) "On" else "Off", ui.scheduleOn, onToggle) }
+
+            Text(
+                "Repeat",
+                style = AccType.smallMedium,
+                color = c.mute,
+                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 4.dp),
+            )
+            Panel {
+                modes.forEachIndexed { i, (mode, label, sub) ->
+                    if (i > 0) Hairline()
+                    ListRow(label, sub, onClick = { onRepeat(mode) }) { RadioDot(ui.repeatMode == mode) }
+                }
+                if (ui.repeatMode == "custom") {
+                    Hairline()
+                    DaysStepper(ui.customDays, onCustomDays)
+                }
+            }
+
+            Panel(Modifier.padding(top = 12.dp)) {
+                ListRow("Time", onClick = { pickTime = true }) {
+                    Text(formatTime(ui.hour, ui.minute), style = AccType.body, color = c.mute)
+                }
+            }
+            Text(
+                "The first clean runs at the next ${formatTime(ui.hour, ui.minute)}, then repeats. " +
+                    "Android may delay it a little to save battery.",
+                style = AccType.small,
+                color = c.mute,
+                modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+            )
+        }
+    }
+
+    if (pickTime) {
+        TimeDialog(
+            hour = ui.hour,
+            minute = ui.minute,
+            onDismiss = { pickTime = false },
+            onConfirm = { h, m ->
+                onTime(h, m)
+                pickTime = false
+            },
         )
+    }
+}
+
+@Composable
+private fun DaysStepper(days: Int, onChange: (Int) -> Unit) {
+    val c = Acc.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Days between cleans", style = AccType.bodyMedium, color = c.ink, modifier = Modifier.weight(1f))
+        SmallButton("\u2212", { onChange((days - 1).coerceAtLeast(1)) }, ghost = true)
+        Text(
+            "$days",
+            style = AccType.title,
+            color = c.ink,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 32.dp),
+        )
+        SmallButton("+", { onChange((days + 1).coerceAtMost(365)) }, ghost = true)
     }
 }
 

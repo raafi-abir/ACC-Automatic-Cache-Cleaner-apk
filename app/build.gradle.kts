@@ -12,8 +12,14 @@ android {
         applicationId = "io.github.raafiabir.acc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // The release workflow passes these from the git tag; local builds use the defaults.
+        // Where the in-app update checker looks. The workflows pass the real repo; this is the fallback.
+        buildConfigField(
+            "String", "UPDATE_REPO",
+            "\"${project.findProperty("updateRepo") ?: "raafi-abir/ACC-Automatic-Cache-Cleaner-apk"}\"",
+        )
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("versionName") as String?) ?: "1.0"
     }
 
     // CI passes a real keystore through env vars. Without it, release falls back

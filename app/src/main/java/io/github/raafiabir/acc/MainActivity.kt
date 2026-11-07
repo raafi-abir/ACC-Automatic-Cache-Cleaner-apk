@@ -40,6 +40,9 @@ class MainActivity : ComponentActivity() {
                             packageManager.getLaunchIntentForPackage(ShizukuBridge.SHIZUKU_PACKAGE)?.let { open(it) }
                         },
                         getShizuku = { open(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"))) },
+                        openUrl = { url ->
+                            if (url.startsWith("https://")) open(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        },
                     ),
                 )
             }

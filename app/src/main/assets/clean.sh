@@ -3,17 +3,36 @@ SD=${SD:-/storage/emulated/0}
 DATA=${DATA:-/data}
 OK=0
 LEFT=0
+TRIM_RC=-
+TRIM_ERR=
+
+# Runs a command with a time limit when `timeout` exists, so one stuck call can't hang the whole clean.
+run() {
+  secs=$1
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
 
 if [ "$DO_CACHE" = 1 ]; then
-  # Per-app cache, same call Settings uses for "Clear cache".
-  for p in $PKGS; do
-    case "$(pm clear --cache-only "$p" 2>&1)" in
-      *Success*) OK=$((OK + 1)) ;;
-    esac
-  done
-  # If --cache-only isn't supported, fall back to a global trim (can't honour exclusions).
-  if [ "$OK" -eq 0 ] && [ -n "$PKGS" ] && [ "$ALLOW_TRIM" = 1 ]; then
-    pm trim-caches 4096G >/dev/null 2>&1
+  if [ "$ALLOW_TRIM" = 1 ]; then
+    # Global trim: the call the shell user is most reliably allowed to make. Frees every app's cache.
+    TRIM_OUT=$(run 180 pm trim-caches 4096G 2>&1)
+    TRIM_RC=$?
+    if [ "$TRIM_RC" -ne 0 ]; then
+      TRIM_ERR=$(printf '%s\n' "$TRIM_OUT" | head -n 1)
+    fi
+  fi
+  if [ "$TRIM_RC" != 0 ]; then
+    # Per-app clear: needed when apps are excluded, and the fallback if the global trim failed.
+    for p in $PKGS; do
+      case "$(run 10 pm clear --cache-only "$p" 2>&1)" in
+        *Success*) OK=$((OK + 1)) ;;
+      esac
+    done
   fi
   # Root only: also empty cache and code_cache straight from app storage.
   if [ "$ROOT" = 1 ]; then
@@ -62,4 +81,7 @@ if [ "$DO_LEFT" = 1 ]; then
   fi
 fi
 
-echo "ok=$OK left=$LEFT"
+echo "ok=$OK left=$LEFT trim=$TRIM_RC"
+if [ -n "$TRIM_ERR" ]; then
+  echo "err=$TRIM_ERR"
+fi

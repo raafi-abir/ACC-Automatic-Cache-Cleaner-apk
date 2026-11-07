@@ -150,7 +150,8 @@ private fun AccessBlock(shown: Backend, accessOk: Boolean, ui: UiState, act: Set
             } else {
                 Note(
                     "Turn on ACC in Accessibility settings. On Android 13 and later, first allow restricted " +
-                        "settings in App info (three-dot menu).",
+                        "settings in App info (three-dot menu). Banking apps such as bKash can refuse to run " +
+                        "while it is on, so ACC switches it off after each clean.",
                     false,
                 )
                 Buttons(false) {

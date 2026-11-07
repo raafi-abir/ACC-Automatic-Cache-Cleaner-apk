@@ -43,7 +43,7 @@ jobs:
         run: sh tests/clean_test.sh
 
       - name: Build release APK
-        run: gradle :app:assembleRelease --no-daemon
+        run: gradle :app:assembleRelease --no-daemon -PupdateRepo="${{ github.repository }}"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -19,6 +19,7 @@ class AppActions(
     val openAccessibility: () -> Unit,
     val openShizuku: () -> Unit,
     val getShizuku: () -> Unit,
+    val openUrl: (String) -> Unit,
 )
 
 @Composable
@@ -26,6 +27,11 @@ fun App(vm: MainViewModel, actions: AppActions) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val apps by vm.apps.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf("home") }
+
+    val toggleSchedule: (Boolean) -> Unit = { on ->
+        vm.setSchedule(on)
+        if (on && !ui.notifications) actions.requestNotifications()
+    }
 
     LaunchedEffect(screen) { if (screen == "exclusions") vm.loadApps() }
 
@@ -54,7 +60,27 @@ fun App(vm: MainViewModel, actions: AppActions) {
                 onLeftover = vm::setLeftover,
                 onBack = { screen = "home" },
             )
-            "access" -> AccessScreen(ui = ui, onChoose = vm::setBackend, onBack = { screen = "home" })
+            "access" -> AccessScreen(
+                ui = ui,
+                onChoose = vm::setBackend,
+                onOffAfter = vm::setAccessOffAfter,
+                onBack = { screen = "home" },
+            )
+            "updates" -> UpdatesScreen(
+                ui = ui,
+                onCheck = vm::checkUpdates,
+                onToggle = vm::setUpdateCheck,
+                onOpen = actions.openUrl,
+                onBack = { screen = "home" },
+            )
+            "schedule" -> ScheduleScreen(
+                ui = ui,
+                onToggle = toggleSchedule,
+                onTime = vm::setTime,
+                onRepeat = vm::setRepeat,
+                onCustomDays = vm::setCustomDays,
+                onBack = { screen = "home" },
+            )
             "exclusions" -> ExclusionsScreen(
                 apps = apps,
                 excluded = ui.excluded,
@@ -67,11 +93,7 @@ fun App(vm: MainViewModel, actions: AppActions) {
                     clean = vm::clean,
                     stop = vm::stop,
                     statusAction = { actions.statusAction(ui) },
-                    setSchedule = { on ->
-                        vm.setSchedule(on)
-                        if (on && !ui.notifications) actions.requestNotifications()
-                    },
-                    setTime = vm::setTime,
+                    setSchedule = toggleSchedule,
                     open = { screen = it },
                 ),
             )

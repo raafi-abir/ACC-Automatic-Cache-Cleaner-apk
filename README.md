@@ -14,6 +14,20 @@ Locally: open the folder in Android Studio, or run `gradle wrapper` once and the
 Without signing secrets the APK is signed with the debug key. Add `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 `KEY_ALIAS`, `KEY_PASSWORD` as repo secrets to sign with your own.
 
+## Publish a release
+
+1. One time: make a signing key and add it as repo secrets (Settings, Secrets and variables, Actions).
+   ```
+   keytool -genkeypair -v -keystore acc-release.jks -alias acc -keyalg RSA -keysize 4096 -validity 10000
+   base64 -w0 acc-release.jks     # paste into KEYSTORE_BASE64
+   ```
+   The other secrets are `KEYSTORE_PASSWORD`, `KEY_ALIAS` (`acc`) and `KEY_PASSWORD`. Back the `.jks` file up somewhere
+   safe. If you lose it, nobody can update the app without uninstalling first.
+2. Wait for the `Build APK` workflow to pass on `main`.
+3. Tag and push: `git tag v1.0 && git push origin v1.0`.
+4. The `Release` workflow builds the APK, names it `ACC-Shizuku-v1.0.apk`, adds a SHA-256 file, and publishes it
+   under the repo's Releases page. `versionName` comes from the tag and `versionCode` from the run number.
+
 ## Use
 
 1. Install and start Shizuku (wireless debugging or root), or just have a root manager ready.
@@ -26,14 +40,15 @@ Without signing secrets the APK is signed with the debug key. Add `KEYSTORE_BASE
 |---|---|
 | `ShellService` | Shizuku user service. Runs `app/src/main/assets/clean.sh` as shell. |
 | `RootBridge` / `Executor` | Runs the same script through `su`, or through Shizuku, depending on the access method. |
-| `clean.sh` | `pm clear --cache-only <pkg>` per app, deletes `Android/data/*/cache`, thumbnails, `logcat -c`, optional leftover folders. With root it also empties `cache` and `code_cache` directly under `/data/user/0` and `/data/user_de/0`. |
+| `clean.sh` | `pm trim-caches` (global, the call shell is most reliably allowed to make); `pm clear --cache-only <pkg>` per app only when apps are excluded or the trim fails. Both run under a time limit. Also deletes `Android/data/*/cache`, thumbnails, `logcat -c`, optional leftover folders. With root it also empties `cache` and `code_cache` directly under `/data/user/0` and `/data/user_de/0`. |
 | `CacheScanner` | Per-app cache size via `StorageStatsManager`. |
 | `CleaningService` | Foreground service (type specialUse) that hosts a long accessibility clean and shows progress with a Stop action. |
 | `Scheduler` / `CleanWorker` | WorkManager, 24 h period, first run at the chosen time. |
 
 ## Limits without root
 
-- Shizuku in ADB mode (not root) can't delete other apps' private files directly. App cache goes through `pm clear --cache-only`, which needs a reasonably recent Android. If it's unsupported, ACC falls back to `pm trim-caches` (all apps, ignores exclusions).
+- Shizuku in ADB mode (not root) can't delete other apps' private files directly. App cache goes through `pm trim-caches`, which clears every app and can't skip any. With excluded apps ACC has to clear apps one by one with `pm clear --cache-only`, which some Android versions refuse for the shell user. In that case the run fails with an explanation instead of silently doing nothing, and you can remove the exclusions to use the global clean.
+- If a clean fails, Access method > Copy last clean log copies the script output for a bug report.
 - If Shizuku isn't running at the scheduled time (it has to be restarted after every reboot in ADB mode), the run is skipped and you get a notification.
 - WorkManager is approximate. The clean runs around the chosen time, not on the second.
 - Some devices block shell access to `Android/data`. The external-cache and leftover steps then do nothing.
@@ -55,6 +70,34 @@ Storage, then taps Clear cache, as you would by hand.
 - Button labels come from the Settings app's own strings, so they match your language. OEM Settings layouts that
   differ from stock Android may not work.
 - The service only reads and taps Settings windows, and only taps a button labelled exactly "Clear cache".
+
+### Banking apps (bKash and similar)
+
+Some banking and wallet apps refuse to run while any accessibility service is on. That is their own security check,
+and ACC doesn't try to hide from it. Instead ACC keeps the service off whenever it isn't cleaning:
+
+- **Turn it off after cleaning** (Access method screen, on by default): after each run ACC switches its own service off.
+  Without more setup you turn the service on again in Settings before the next clean.
+- **Fully automatic:** grant ACC one extra permission once from a computer with USB debugging:
+  `adb shell pm grant io.github.raafiabir.acc android.permission.WRITE_SECURE_SETTINGS`.
+  ACC then switches the service on right before a clean and off right after, including scheduled ones, so the
+  service is only on for the few minutes a clean takes. The Access method screen shows the command with a Copy button.
+- If your banking app still complains outside a clean, check that the service really is off under Settings > Accessibility.
+
+## Updates
+
+ACC checks GitHub Releases for a newer version about once a day (and when you open the app if the last check is
+over 12 hours old), shows an "Update available" banner on the home screen, and sends one notification per new
+release. Download opens the APK in your browser; nothing is installed automatically.
+
+- It needs the `INTERNET` permission and only talks to `api.github.com`. Turn it off under Updates > Check automatically.
+- The repo it checks is set at build time: the workflows pass `-PupdateRepo=<owner>/<repo>`, so builds from your repo
+  look at your repo. For local builds the default is `raafi-abir/ACC-Automatic-Cache-Cleaner-apk`; change it in `app/build.gradle.kts`.
+- Versions are named `1.0`, then `1.1`, `1.2`, `1.3` and so on, and the git tag is the same with a `v` (`v1.0`, `v1.1`).
+  The app compares the release tag with its own version number by number, so `v1.10` counts as newer than `v1.9`,
+  and a patch release like `v1.2.1` works too.
+- `tests/VersionsTest.kt` covers the comparison. Run it with a Kotlin compiler:
+  `kotlinc app/src/main/java/io/github/raafiabir/acc/Versions.kt tests/VersionsTest.kt -include-runtime -d t.jar && java -jar t.jar`
 
 ## Fonts
 

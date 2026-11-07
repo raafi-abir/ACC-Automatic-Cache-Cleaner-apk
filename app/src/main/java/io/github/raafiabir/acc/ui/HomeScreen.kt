@@ -52,7 +52,6 @@ class HomeActions(
     val stop: () -> Unit,
     val statusAction: () -> Unit,
     val setSchedule: (Boolean) -> Unit,
-    val setTime: (Int, Int) -> Unit,
     val open: (String) -> Unit,
 )
 
@@ -62,7 +61,6 @@ private val barAlphas = listOf(1f, 0.72f, 0.48f, 0.26f)
 fun HomeScreen(ui: UiState, actions: HomeActions) {
     val ctx = LocalContext.current
     val c = Acc.colors
-    var pickTime by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -80,6 +78,16 @@ fun HomeScreen(ui: UiState, actions: HomeActions) {
         ) {
             Text("ACC", style = AccType.wordmark, color = c.ink)
             StatusChip(ui.active?.label)
+        }
+
+        if (ui.updateVersion != null) {
+            Panel(Modifier.padding(top = 12.dp)) {
+                ListRow(
+                    "Update available",
+                    "ACC ${ui.updateVersion} is ready to download",
+                    { actions.open("updates") },
+                ) { Chevron() }
+            }
         }
 
         CacheFigure(ctx, ui)
@@ -101,8 +109,8 @@ fun HomeScreen(ui: UiState, actions: HomeActions) {
         Panel {
             ListRow(
                 title = "Scheduled cleaning",
-                sub = if (ui.scheduleOn) "Every day at ${formatTime(ui.hour, ui.minute)}" else "Off",
-                onClick = { pickTime = true },
+                sub = if (ui.scheduleOn) "${repeatText(ui)} at ${formatTime(ui.hour, ui.minute)}" else "Off",
+                onClick = { actions.open("schedule") },
             ) { AccSwitch(ui.scheduleOn, actions.setSchedule) }
             Hairline()
             ListRow("What to clean", cleanSummary(ui), { actions.open("clean") }) { Chevron() }
@@ -114,21 +122,14 @@ fun HomeScreen(ui: UiState, actions: HomeActions) {
             ) { Chevron() }
             Hairline()
             ListRow("Access method", accessSummary(ui), { actions.open("access") }) { Chevron() }
+            Hairline()
+            ListRow(
+                "Updates",
+                if (ui.updateVersion != null) "${ui.updateVersion} available" else "Version ${ui.version}",
+                { actions.open("updates") },
+            ) { Chevron() }
         }
         Spacer(Modifier.height(28.dp))
-    }
-
-    if (pickTime) {
-        TimeDialog(
-            hour = ui.hour,
-            minute = ui.minute,
-            onDismiss = { pickTime = false },
-            onConfirm = { h, m ->
-                actions.setTime(h, m)
-                if (!ui.scheduleOn) actions.setSchedule(true)
-                pickTime = false
-            },
-        )
     }
 }
 
@@ -244,7 +245,9 @@ private fun status(ui: UiState): Pair<String?, String?> {
         ui.active == Backend.Accessibility && !ui.cleaning ->
             "Cleaning opens each app's storage page in Settings. Keep the phone unlocked." to null
         ui.active != null -> null to null
-        ui.backend == Backend.Accessibility -> "The accessibility service is off." to "Open settings"
+        ui.backend == Backend.Accessibility ->
+            (if (ui.accessOffAfter) "Turn the accessibility service on to clean. ACC switches it off afterwards."
+            else "The accessibility service is off.") to "Open settings"
         ui.backend == Backend.Root -> "Root access isn't available." to "Check again"
         ui.shizuku == ShizukuState.NotInstalled -> (neither ?: "Shizuku isn't installed.") to "Get Shizuku"
         ui.shizuku == ShizukuState.NotRunning -> (neither ?: "Shizuku isn't running.") to "Open Shizuku"
@@ -276,7 +279,14 @@ private fun cleanSummary(ui: UiState): String {
 private fun accessSummary(ui: UiState): String =
     if (ui.backend == Backend.Auto) "Auto" + (ui.active?.let { ", using ${it.label}" } ?: "") else ui.backend.label
 
-private fun formatTime(h: Int, m: Int) = "%02d:%02d".format(h, m)
+fun repeatText(ui: UiState): String = when (ui.intervalDays) {
+    1 -> "Every day"
+    7 -> "Every week"
+    30 -> "Every month"
+    else -> "Every ${ui.intervalDays} days"
+}
+
+fun formatTime(h: Int, m: Int) = "%02d:%02d".format(h, m)
 
 private fun splitSize(s: String): Pair<String, String> {
     val i = s.indexOfLast { it == ' ' || it == '\u00A0' }
@@ -285,7 +295,7 @@ private fun splitSize(s: String): Pair<String, String> {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TimeDialog(hour: Int, minute: Int, onDismiss: () -> Unit, onConfirm: (Int, Int) -> Unit) {
+fun TimeDialog(hour: Int, minute: Int, onDismiss: () -> Unit, onConfirm: (Int, Int) -> Unit) {
     val ctx = LocalContext.current
     val state = rememberTimePickerState(hour, minute, DateFormat.is24HourFormat(ctx))
     AlertDialog(
