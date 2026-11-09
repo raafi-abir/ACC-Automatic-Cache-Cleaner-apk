@@ -18,8 +18,8 @@ android {
             "String", "UPDATE_REPO",
             "\"${project.findProperty("updateRepo") ?: "raafi-abir/ACC-Automatic-Cache-Cleaner-apk"}\"",
         )
-        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = (project.findProperty("versionName") as String?) ?: "1.0"
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 2
+        versionName = (project.findProperty("versionName") as String?) ?: "1.1"
     }
 
     // CI passes a real keystore through env vars. Without it, release falls back
